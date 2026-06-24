@@ -1,6 +1,11 @@
 """LangGraph workflow skeleton."""
 
-from multi_agent_research_lab.core.errors import StudentTodoError
+from langgraph.graph import END, StateGraph
+
+from multi_agent_research_lab.agents.analyst import AnalystAgent
+from multi_agent_research_lab.agents.researcher import ResearcherAgent
+from multi_agent_research_lab.agents.supervisor import SupervisorAgent
+from multi_agent_research_lab.agents.writer import WriterAgent
 from multi_agent_research_lab.core.state import ResearchState
 
 
@@ -11,18 +16,52 @@ class MultiAgentWorkflow:
     """
 
     def build(self) -> object:
-        """Create a LangGraph graph.
+        """Create a LangGraph graph."""
+        # Initialize StateGraph with the ResearchState schema
+        workflow = StateGraph(ResearchState)
 
-        TODO(student): Implement nodes, edges, conditional routing, and stop condition.
-        Suggested nodes: supervisor, researcher, analyst, writer, optional critic.
-        """
+        # Add agent nodes
+        workflow.add_node("supervisor", lambda state: SupervisorAgent().run(state))
+        workflow.add_node("researcher", lambda state: ResearcherAgent().run(state))
+        workflow.add_node("analyst", lambda state: AnalystAgent().run(state))
+        workflow.add_node("writer", lambda state: WriterAgent().run(state))
 
-        raise StudentTodoError("TODO(student): implement MultiAgentWorkflow.build")
+        # Supervisor is the entrypoint
+        workflow.set_entry_point("supervisor")
+
+        # Routing function based on Supervisor's decision
+        def route_decision(state: ResearchState) -> str:
+            if state.route_history:
+                return state.route_history[-1]
+            return "done"
+
+        # Conditional routing from supervisor
+        workflow.add_conditional_edges(
+            "supervisor",
+            route_decision,
+            {
+                "researcher": "researcher",
+                "analyst": "analyst",
+                "writer": "writer",
+                "done": END,
+            },
+        )
+
+        # Non-supervisor nodes always route back to supervisor
+        workflow.add_edge("researcher", "supervisor")
+        workflow.add_edge("analyst", "supervisor")
+        workflow.add_edge("writer", "supervisor")
+
+        return workflow.compile()
 
     def run(self, state: ResearchState) -> ResearchState:
-        """Execute the graph and return final state.
+        """Execute the graph and return final state."""
+        compiled_graph = self.build()
+        result = compiled_graph.invoke(state)
 
-        TODO(student): Compile graph, invoke it, and convert result back to ResearchState.
-        """
-
-        raise StudentTodoError("TODO(student): implement MultiAgentWorkflow.run")
+        # Ensure the result is converted back to ResearchState
+        if isinstance(result, ResearchState):
+            return result
+        elif isinstance(result, dict):
+            return ResearchState(**result)
+        return result
